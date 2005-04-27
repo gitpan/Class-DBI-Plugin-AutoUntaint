@@ -9,7 +9,7 @@ Class::DBI::Plugin::AutoUntaint - untaint columns automatically
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = 0.02;
 
 =head1 SYNOPSIS
 
@@ -53,16 +53,58 @@ sub import
 
 =item auto_untaint( [ %args ] )
 
-    untaint_columns
-    skip_columns
-    match_columns
-    untaint_types
-    match_types
+The following options can be set in C<%args>:
+
+=over 4
+
+=item untaint_columns
+
+Specify untaint types for specific columns:
+
+    untaint_columns => { printable => [ qw( name title ) ],
+                         date => [ qw( birthday ) ],
+                         }
+                         
+=item skip_columns
+
+List of columns that will not be untainted:
+
+    skip_columns => [ qw( secret_stuff internal_data ) ]
+
+=item match_columns
+
+Use regular expressions matching groups of columns to specify untaint 
+types:
+
+    match_columns => { qr(^(first|last)_name$) => 'printable',
+                       qr(^.+_event$) => 'date',
+                       qr(^count_.+$) => 'integer',
+                       }
+                       
+=item untaint_types
+
+Untaint according to SQL data types:
+
+    untaint_types => { enum => 'printable',
+                       }
+                       
+Defaults are taken from C<Class::DBI::FromCGI::column_type_for()>, but things 
+like C<enum> don't have a universal default but might have a sensible default 
+in a particular application. 
+                        
+=item match_types
+
+Use a regular expression to map SQL data types to untaint types:
+
+    match_types => { qr(^.*int$) => 'integer',
+                     }
+                     
+=item debug
     
-    debug    set to 1 for brief info, 2 for a list of each column's untaint type 
+Control how much detail to report (via C<warn>) during setup. Set to 1 for brief 
+info, and 2 for a list of each column's untaint type.
     
-    maypole  set to 1 if this is a Maypole app (used by Maypole::Plugin::AutoUntaint)
-    
+=back
 
 =cut
 
@@ -72,11 +114,11 @@ sub auto_untaint
     
     warn "Untainting $class\n" if $args{debug} == 1;
     
-    my $untaint_cols = $args{untaint_columns} || {}; # { $untaint_as => [qw( col1 col2 )], ... }
+    my $untaint_cols = $args{untaint_columns} || {}; 
     my $skip_cols    = $args{skip_columns}    || [];
-    my $match_cols   = $args{match_columns}   || {}; # { $col_regex  => $untaint_as, ... }
-    my $ut_types     = $args{untaint_types}   || {}; # { $col_type   => $untaint_as, ... } 
-    my $match_types  = $args{match_types}     || {}; # { $type_regex => $untaint_as, ... } 
+    my $match_cols   = $args{match_columns}   || {}; 
+    my $ut_types     = $args{untaint_types}   || {}; 
+    my $match_types  = $args{match_types}     || {}; 
     
     my %skip = map { $_ => 1 } @$skip_cols;
     
@@ -89,11 +131,11 @@ sub auto_untaint
     
     # CDBI::mysql classes already provide _column_info(), but 
     # this might work elsewhere too (all taken from CDBI::mysql)
+    #my $column_info = $class->_column_info;
     $class->set_sql( desc_table => 'DESCRIBE __TABLE__' ) unless 
         $class->can( 'sql_desc_table' );
     ( my $sth = $class->sql_desc_table )->execute;
     my $column_info = { map { $_->{field} => $_ } $sth->fetchall_hash };
-    #my $column_info = $class->_column_info;
     
     # the above code is an attempt to make this work elsewhere than MySQL, but 
     # if it fails, let me know your db and any suggestions for fixing it
@@ -119,8 +161,7 @@ sub auto_untaint
             $msg .= "\n" . YAML::Dump( $column_info ) if $y;
         }
         
-        # die disappears if running within Maypole
-        $type or $args{maypole} ? warn $msg : die $msg;
+        die $msg unless $type;
         
         my $ut = $ut_cols{ $col } || $ut_types->{ $type } ||
                  Class::DBI::FromCGI::column_type_for( $type ) || '';
@@ -137,10 +178,7 @@ sub auto_untaint
             $ut = $match_cols->{ $regex } if $col =~ $regex;
         }
         
-        # die disappears if running within Maypole
-        my $msg2 = "No untaint type detected for column $col, type $type in $class" 
-                    unless $ut;
-        $ut or $args{maypole} ? warn $msg2 : die $msg2;
+        die "No untaint type detected for column $col, type $type in $class" unless $ut;
     
         my $type2 = substr( $type, 0, 25 );
         $type2 .= '...' unless $type2 eq $type;
@@ -157,6 +195,14 @@ sub auto_untaint
 
 
 =back
+
+=head1 TODO
+
+Tests!
+
+=head1 SEE ALSO
+
+L<Class::DBI::FromCGI|Class::DBI::FromCGI>.
 
 =head1 AUTHOR
 
