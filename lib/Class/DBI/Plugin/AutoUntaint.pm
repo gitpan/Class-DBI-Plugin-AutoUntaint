@@ -1,4 +1,5 @@
 package Class::DBI::Plugin::AutoUntaint;
+use Carp();
 
 use warnings;
 use strict;
@@ -9,12 +10,22 @@ Class::DBI::Plugin::AutoUntaint - untaint columns automatically
 
 =cut
 
-our $VERSION = 0.02;
+our $VERSION = 0.03;
+
+our %TypesMap = ( varchar   => 'printable',
+                  char      => 'printable', # includes MySQL enum
+                  blob      => 'printable', # includes MySQL text
+                  integer   => 'integer',
+                  bigint    => 'integer',
+                  smallint  => 'integer',
+                  date      => 'date',
+                  );    
 
 =head1 SYNOPSIS
 
     package Film;
     use Class::DBI::FromCGI;
+    use Class::DBI::Plugin::Type;
     use Class::DBI::Plugin::AutoUntaint;
     use base 'Class::DBI';
     # set up as any other Class::DBI class.
@@ -62,7 +73,7 @@ The following options can be set in C<%args>:
 Specify untaint types for specific columns:
 
     untaint_columns => { printable => [ qw( name title ) ],
-                         date => [ qw( birthday ) ],
+                         date      => [ qw( birthday ) ],
                          }
                          
 =item skip_columns
@@ -77,8 +88,8 @@ Use regular expressions matching groups of columns to specify untaint
 types:
 
     match_columns => { qr(^(first|last)_name$) => 'printable',
-                       qr(^.+_event$) => 'date',
-                       qr(^count_.+$) => 'integer',
+                       qr(^.+_event$)          => 'date',
+                       qr(^count_.+$)          => 'integer',
                        }
                        
 =item untaint_types
@@ -103,8 +114,20 @@ Use a regular expression to map SQL data types to untaint types:
     
 Control how much detail to report (via C<warn>) during setup. Set to 1 for brief 
 info, and 2 for a list of each column's untaint type.
+
+=item strict
+
+If set to 1, will die if an untaint type cannot be determined for any column. 
+Default is to issue warnings and not untaint these column(s).
     
 =back
+
+=back
+
+=head2 Failures
+
+The default mapping of column types to untaint types is set in C<%Class::DBI::Plugin::AutoUntaint::TypesMap>, and is probably incomplete. If you come across any failures, you can add suitable entries to the hash before calling C<auto_untaint()>. However, B<please> email the author with any failures so the hash 
+can be updated for everyone.
 
 =cut
 
@@ -129,19 +152,6 @@ sub auto_untaint
         $ut_cols{ $_ } = $as for @{ $untaint_cols->{ $as } };
     }
     
-    # CDBI::mysql classes already provide _column_info(), but 
-    # this might work elsewhere too (all taken from CDBI::mysql)
-    #my $column_info = $class->_column_info;
-    $class->set_sql( desc_table => 'DESCRIBE __TABLE__' ) unless 
-        $class->can( 'sql_desc_table' );
-    ( my $sth = $class->sql_desc_table )->execute;
-    my $column_info = { map { $_->{field} => $_ } $sth->fetchall_hash };
-    
-    # the above code is an attempt to make this work elsewhere than MySQL, but 
-    # if it fails, let me know your db and any suggestions for fixing it
-    $class->_croak( "Can't retrieve column_info for this db driver - please email author" )
-        unless $column_info;
-        
     my %untaint;
     
     # $col->name preserves case - stringifying doesn't
@@ -149,22 +159,11 @@ sub auto_untaint
     {
         next if $skip{ $col };      
     
-        my $type = $column_info->{$col}->{type};
+        my $type = $class->column_type( $col );
         
-        my $msg = "No type detected for column $col ($class)" unless $type;
+        die "No type detected for column $col ($class)" unless $type;
 
-        # maybe other dbs return column_info in a different structure        
-        if ( $args{debug} > 2 and $msg )
-        {
-            my $y = YAML->require;
-            warn "Need YAML for extra debug info" unless $y;
-            $msg .= "\n" . YAML::Dump( $column_info ) if $y;
-        }
-        
-        die $msg unless $type;
-        
-        my $ut = $ut_cols{ $col } || $ut_types->{ $type } ||
-                 Class::DBI::FromCGI::column_type_for( $type ) || '';
+        my $ut = $ut_cols{ $col } || $ut_types->{ $type } || $TypesMap{ $type } || '';
                  
         foreach my $regex ( keys %$match_types )
         {
@@ -178,7 +177,10 @@ sub auto_untaint
             $ut = $match_cols->{ $regex } if $col =~ $regex;
         }
         
-        die "No untaint type detected for column $col, type $type in $class" unless $ut;
+        my $fail = "No untaint type detected for column $col, type $type in $class"
+            unless $ut;
+            
+        $fail and $args{strict} ? die $fail : warn $fail;
     
         my $type2 = substr( $type, 0, 25 );
         $type2 .= '...' unless $type2 eq $type;
@@ -187,14 +189,11 @@ sub auto_untaint
             $class, $col, $type2, $ut 
             if $args{debug} > 1;
         
-        push @{ $untaint{ $ut } }, $col;
+        push( @{ $untaint{ $ut } }, $col ) if $ut;
     }
     
     $class->untaint_columns( %untaint );    
 }
-
-
-=back
 
 =head1 TODO
 
@@ -215,8 +214,6 @@ C<bug-class-dbi-plugin-autountaint@rt.cpan.org>, or through the web interface at
 L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Class-DBI-Plugin-AutoUntaint>.
 I will be notified, and then you'll automatically be notified of progress on
 your bug as I make changes.
-
-=head1 ACKNOWLEDGEMENTS
 
 =head1 COPYRIGHT & LICENSE
 

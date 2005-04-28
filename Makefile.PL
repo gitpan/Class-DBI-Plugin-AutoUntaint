@@ -5,6 +5,8 @@ WriteMakefile
           'NAME' => 'Class::DBI::Plugin::AutoUntaint',
           'VERSION_FROM' => 'lib/Class/DBI/Plugin/AutoUntaint.pm',
           'PREREQ_PM' => {
+                           'Class::DBI::FromCGI' => '0',
+                           'Class::DBI::Plugin::Type' => '0',
                            'Test::More' => '0'
                          },
           'INSTALLDIRS' => 'site',

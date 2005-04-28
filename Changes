@@ -1,5 +1,9 @@
 Revision history for Class-DBI-Plugin-AutoUntaint
 
+0.03    Thur 28 Apr 2005 15:20
+        - now using CDBI::Plugin::Type to determine column types 
+            (thanks Will Hawes)
+
 0.02    Wed  27 Apr 2005 22:00 
         - more docs
         - removed hackery to handle Maypole not dying on cue, because 
