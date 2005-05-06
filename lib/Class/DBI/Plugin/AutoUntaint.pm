@@ -10,15 +10,27 @@ Class::DBI::Plugin::AutoUntaint - untaint columns automatically
 
 =cut
 
-our $VERSION = 0.03;
+our $VERSION = 0.04;
 
 our %TypesMap = ( varchar   => 'printable',
                   char      => 'printable', # includes MySQL enum
                   blob      => 'printable', # includes MySQL text
+                  
                   integer   => 'integer',
                   bigint    => 'integer',
                   smallint  => 'integer',
+                  tinyint   => 'integer',
+                  
+                  # loads Date::Manip, which is powerful, but big and slow
                   date      => 'date',
+                  
+                  # normally you want to skip untainting a timestamp column...
+                  #timestamp => 'date',
+                  
+                  # someone should write CGI::Untaint::number
+                  double    => 'printable',
+                  float     => 'printable',
+                  decimal   => 'printable',
                   );    
 
 =head1 SYNOPSIS
@@ -43,8 +55,7 @@ our %TypesMap = ( varchar   => 'printable',
 =head1 DESCRIPTION
 
 Automatically detects suitable default untaint methods for most column types. 
-Calls C<die> with an informative message for any columns it can't figure out. 
-Accepts arguments for overriding the default untaint type. 
+Accepts arguments for overriding the default untaint types. 
 
 =head1 METHODS
 
@@ -96,12 +107,10 @@ types:
 
 Untaint according to SQL data types:
 
-    untaint_types => { enum => 'printable',
+    untaint_types => { char => 'printable',
                        }
                        
-Defaults are taken from C<Class::DBI::FromCGI::column_type_for()>, but things 
-like C<enum> don't have a universal default but might have a sensible default 
-in a particular application. 
+Defaults are taken from the package global C<%TypesMap>.
                         
 =item match_types
 
@@ -124,10 +133,14 @@ Default is to issue warnings and not untaint these column(s).
 
 =back
 
+=head2 timestamp
+
+The default behaviour is to skip untainting C<timestamp> columns. A warning will be issued
+if the C<debug> parameter is set to 2.
+
 =head2 Failures
 
-The default mapping of column types to untaint types is set in C<%Class::DBI::Plugin::AutoUntaint::TypesMap>, and is probably incomplete. If you come across any failures, you can add suitable entries to the hash before calling C<auto_untaint()>. However, B<please> email the author with any failures so the hash 
-can be updated for everyone.
+The default mapping of column types to untaint types is set in C<%Class::DBI::Plugin::AutoUntaint::TypesMap>, and is probably incomplete. If you come across any failures, you can add suitable entries to the hash before calling C<auto_untaint()>. However, B<please> email me with any failures so the hash can be updated for everyone.
 
 =cut
 
@@ -176,6 +189,13 @@ sub auto_untaint
             last if $ut;
             $ut = $match_cols->{ $regex } if $col =~ $regex;
         }
+        
+        my $skip_ts = ( ( $type eq 'timestamp' ) && ! $ut );
+        
+        warn "Skipping   $class $col [timestamp]\n" 
+            if ( $skip_ts and $args{debug} > 1 );
+        
+        next if $skip_ts;
         
         my $fail = "No untaint type detected for column $col, type $type in $class"
             unless $ut;
