@@ -10,16 +10,18 @@ Class::DBI::Plugin::AutoUntaint - untaint columns automatically
 
 =cut
 
-our $VERSION = 0.04;
+our $VERSION = 0.1;
 
 our %TypesMap = ( varchar   => 'printable',
-                  char      => 'printable', # includes MySQL enum
+                  char      => 'printable', # includes MySQL enum and set
                   blob      => 'printable', # includes MySQL text
+                  text      => 'printable',
                   
                   integer   => 'integer',
                   bigint    => 'integer',
                   smallint  => 'integer',
                   tinyint   => 'integer',
+                  int       => 'integer',
                   
                   # loads Date::Manip, which is powerful, but big and slow
                   date      => 'date',
@@ -170,8 +172,8 @@ sub auto_untaint
     # $col->name preserves case - stringifying doesn't
     foreach my $col ( map { $_->name } $class->columns )
     {
-        next if $skip{ $col };      
-    
+        next if $skip{ $col };    
+        
         my $type = $class->column_type( $col );
         
         die "No type detected for column $col ($class)" unless $type;
